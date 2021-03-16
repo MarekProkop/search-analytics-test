@@ -12,7 +12,7 @@ output:
 
 People often expect the API provides consistent data that always sum up to the same grand totals, regardless of chosen dimensions, but it is not true. The API has some "special features", which makes results rather inconsistent, and only some of them are properly documented.
 
-The purpose of this Analysis is to examine behavior of Google Search Console API and in particular *search_analytics* function from Mark Edmondson's searchConsoleR package. The reason is to document exact impact of dimension combination on the resulting data.
+The purpose of this analysis is to examine behavior of Google Search Console API and in particular *search_analytics* function from [Mark Edmondson's searchConsoleR package](https://code.markedmondson.me/searchConsoleR/). The reason is to document the exact impact of dimension combinations on the resulting data.
 
 # Summary
 
@@ -238,10 +238,7 @@ all_combos_summary %>%
 
 Aggregated results fall into 4 groups:
 
-1)  The same number of impressions and clicks as in the grand totals aggregated **by page**. Only the sigle dimension *page* and the combination of dimensions *page* and *date* fall into this group.
-2)  The same number of impressions and clicks as in the grand totals aggregated **by property**. There are 3 dimensions here: *date*, *country* and *device*, and all their combinations.
-3)  Any combination of 2 or more dimensions that includes *page*, except the combination of *date* and *page*, has significantly lower impressions and clicks than the two groups above.
-4)  Single dimension *query* and all its combinations with other dimensions but *page* have the same number of clicks as the 3rd group and lower number of impressions than any other group.
+1\) The same number of impressions and clicks as in the grand totals aggregated **by page**. Only the sigle dimension *page* and the combination of dimensions *page* and *date* fall into this group. 2) The same number of impressions and clicks as in the grand totals aggregated **by property**. There are 3 dimensions here: *date*, *country* and *device*, and all their combinations. 3) Any combination of 2 or more dimensions that includes *page*, except the combination of *date* and *page*, has significantly lower impressions and clicks than the two groups above. 4) Single dimension *query* and all its combinations with other dimensions but *page* have the same number of clicks as the 3rd group and lower number of impressions than any other group.
 
 Only groups 1, 2 and 4 behaves according to the API documentation. Group 3 does not work as expected.
 
