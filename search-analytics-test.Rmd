@@ -1,10 +1,9 @@
 ---
 title: "Search Console API - Search Analytics Data Consistency Test"
-output:
-  html_document: 
+output: 
+  github_document:
     df_print: kable
     toc: yes
-    keep_md: true
 ---
 
 # Introduction
