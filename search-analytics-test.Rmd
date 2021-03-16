@@ -1,0 +1,369 @@
+---
+title: "Search Console API - Search Analytics Data Consistency Test"
+output:
+  html_document: 
+    df_print: kable
+    toc: yes
+    keep_md: true
+---
+
+# Introduction
+
+[Google Search Console API](https://developers.google.com/webmaster-tools/search-console-api-original) and especially it's [Search Analytics](https://developers.google.com/webmaster-tools/search-console-api-original/v3/searchanalytics) is quite popular in marketing world. Some marketers and analysts use it directly and even more of them use it through another tools, such as [Google Data Studio](https://datastudio.google.com/), [Search Analytics for Sheets](https://searchanalyticsforsheets.com/) etc.
+
+People often expect the API provides consistent data that always sum up to the same grand totals, regardless of chosen dimensions, but it is not true. The API has some "special features", which makes results rather inconsistent, and only some of them are properly documented.
+
+The purpose of this Analysis is to examine behavior of Google Search Console API and in particular *search_analytics* function from Mark Edmondson's searchConsoleR package. The reason is to document exact impact of dimension combination on the resulting data.
+
+# Summary
+
+When fetching Search Analytics data from Google Search Console API, you can get **four different results** depending on a combination of dimensions you provide in a request. For instance inclusion of the *page* dimension turns on the [aggregation type](https://support.google.com/webmasters/answer/7576553?visit_id=637515076005217085-649433118&rd=1#urlorsite&zippy=%2Cqueries) *by page* instead of default *by property*. Also inclusion of the *query* dimension affects the resulting data, because [some queries are anonymized and excluded](https://support.google.com/webmasters/answer/7576553?visit_id=637515076005217085-649433118&rd=1#urlorsite&zippy=%2Cqueries) from the results.
+
+However, the *page* dimension not only turns on the aggregation *by page*, but also unpredictably affects the results when combined with any other dimension but *date*. Either a bug, or feature, this is not documented in the API.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+```{r libs, message=FALSE}
+library(searchConsoleR)
+library(googleAuthR)
+library(tidyverse)
+library(lubridate)
+library(glue)
+library(knitr)
+library(digest) # used for URL anonymization
+```
+
+```{r sc_authoorize, include=FALSE}
+# Autentikace nastavena podle: https://code.markedmondson.me/googleAuthR/articles/google-authentication-types.html#setting-the-client-via-google-cloud-client-json
+gar_set_client(
+  json = "client_secret_1090889009701-el7uqqju2q6lol8t3j6ljd2r5baf946c.apps.googleusercontent.com.json",
+#  json = "~/R/google-client.json", 
+  scopes = c(
+    "https://www.googleapis.com/auth/analytics",
+    "https://www.googleapis.com/auth/analytics.readonly",
+    "https://www.googleapis.com/auth/webmasters"
+  )
+)
+# authenticate and go through the OAuth2 flow first time - specify a filename to save to by passing it in
+gar.project <- gar_auth(token = "sc_ga.httr-oauth")
+```
+
+# API call parameters
+
+```{r params}
+property <- "http://www.cajtydne.cz/"
+date_to <- today() - 3
+date_from <- date_to - weeks(4) + 1
+search_type <- "web"
+
+glue(
+  "Search Console API will be called with the following parameters:\n\n",
+  "Property: {property}\n",
+  "Period: {format(date_from)} to {format(date_to)} ({date_to - date_from + 1} days)\n",
+  "Search Type: {search_type} \n"
+)
+
+```
+
+# Grand totals
+
+Total metrics for the whole site and time period, i.e. without any dimensions or filters.
+
+## Aggreagated by property
+
+Search Analytics API is called without any dimensions or filters, and is aggregated by property. This is the base reference. All other results aggregated by property should sum up to the same numbers.
+
+```{r grand_totals}
+grand_totals_by_property <- search_analytics(
+  property,
+  startDate = date_from,
+  endDate = date_to,
+  searchType = search_type,
+  aggregationType = "byProperty"
+) %>% 
+  mutate(aggregation = "byProperty", .before = clicks)
+
+grand_totals_by_property
+```
+
+## Aggregated by page
+
+This is for comparison with the totals aggregated by property
+
+```{r grand_totals_by_page}
+grand_totals_by_page <- search_analytics(
+  property,
+  startDate = date_from,
+  endDate = date_to,
+  searchType = search_type,
+  aggregationType = "byPage"
+) %>% 
+  mutate(aggregation = "byPage", .before = clicks)
+
+grand_totals_by_page
+```
+
+## Difference due to the aggregation type
+
+```{r aggregation_difference}
+grand_totals_comparison <- rbind(
+  grand_totals_by_property,
+  grand_totals_by_page,
+  data.frame(
+    aggregation = "difference", 
+    clicks = grand_totals_by_property$clicks - grand_totals_by_page$clicks,
+    impressions = grand_totals_by_property$impressions - grand_totals_by_page$impressions,
+    ctr = grand_totals_by_property$ctr - grand_totals_by_page$ctr,
+    position = grand_totals_by_property$position - grand_totals_by_page$position
+  )
+)
+
+grand_totals_comparison
+```
+
+## Conclusion to aggregation types
+
+All four total metrics depends on aggregation type. Clicks and impressions are greater when aggregated by page than when they are aggregated by property, was is expected and is aligned with the API documentation. On the contrary, ctr and position seem to be greater when aggregated by property. This should be confirmed or denied with another data.
+
+# How aggregation depends on dimensions
+
+This time is aggregation left as *auto*, data is fetched with all possible combinations of dimensions but *searchAppearance* and then summarized. The *searchAppearance* dimension is omitted, because it usually returns quite low numbers and can't be combined with other dimensions.
+
+```{r functions, echo=FALSE}
+# A helper function to fetch dimension(s)
+# Uses simple caching to avoid repetitive API calls.
+
+fetch_dimensions <- function(dimensions, max_rows = 1000) {
+  cache_dir <- "search_analytics-cache"
+  dir.create(cache_dir, showWarnings = FALSE)
+  cache_file_path <- paste0(
+    cache_dir, "/",
+    paste(
+      property, date_from, date_to, paste(dimensions, collapse = "-"), search_type, 1000, sep = "-"
+    ) %>% 
+      str_replace("://", "-") %>% 
+      str_replace("/-", "-"),
+    ".rds"
+  )
+  if (file.exists(cache_file_path)) {
+    response <- readRDS(cache_file_path)
+  } else {
+    response <- search_analytics(
+      property,
+      startDate = date_from,
+      endDate = date_to,
+      dimensions = dimensions,
+      searchType = search_type,
+      aggregationType = "auto",
+      rowLimit = max_rows
+    )
+    saveRDS(response, cache_file_path)
+  }
+  rows <- nrow(response)
+  if (rows < max_rows) {
+    # Return result
+    response %>% 
+      arrange(desc(clicks), desc(impressions))
+  } else {
+    stop("Value of max_rows = ", max_rows, " is probably insufficient for dimension(s) ", toString(dimensions), ".")
+  }
+}
+
+# A helper function to fetch dimension(s) and aggregate them to a single row
+
+get_dimensions_totals <- function(dimensions, max_rows = 1000) {
+  fetch_dimensions(dimensions, max_rows) %>%
+    summarise(
+      dimensions = toString(dimensions),
+      rows = n(),
+      clicks = sum(clicks),
+      impressions = sum(impressions),
+      ctr = weighted.mean(ctr, .$impressions),
+      position = weighted.mean(position, .$impressions)
+    )
+}
+
+# A helper function to generate all combinations of dimensions as list
+
+all_dimension_combos <- function() {
+  dimensions <-c("date", "country", "device", "page", "query")
+  lapply(seq_along(dimensions), function(i) combn(dimensions, i, simplify = FALSE)) %>% unlist(recursive = FALSE)
+}
+```
+
+The table is ordered by impressions, clicks, ctr and positions to keep the same values together.
+
+```{r all_combos}
+all_combos_summary <- all_dimension_combos() %>% 
+  map_dfr(get_dimensions_totals, max_rows = 10000) %>% 
+  mutate(dimensions = as_factor(dimensions))
+
+all_combos_summary %>% 
+  arrange(desc(impressions), desc(clicks), ctr, position)
+```
+
+Differences in aggregated values can be more easily spotted in the following charts:
+
+```{r all_combos_charts, fig.width=9, fig.height=10}
+all_combos_summary %>% 
+  select(dimensions, impressions, clicks, ctr, position) %>%
+  pivot_longer(cols = !dimensions, names_to = "metrics") %>%
+  mutate(metrics = fct_relevel(metrics, "impressions",  "clicks")) %>% 
+  ggplot(mapping = aes(x = value, y = dimensions)) +
+  geom_col() +
+  scale_y_discrete(limits = rev) +
+  facet_wrap(facets = "metrics", scales = "free_x")
+```
+
+And finally, the table grouped and split by distinct values of impressions and clicks:
+
+```{r all_combos_groupl_split, results='asis'}
+all_combos_summary %>% 
+  arrange(desc(impressions), desc(clicks), ctr, position) %>% 
+  group_by(impressions, clicks) %>% 
+  group_split() %>% 
+  rev() %>% 
+  walk(function(x) {
+    cat("#### impressions / clicks:", x$impressions[1], "/", x$clicks[1], "\n\n")
+    print(kable(x))
+  })
+```
+
+## Conclusion to dimension combinations
+
+Aggregated results fall into 4 groups:
+
+1)  The same number of impressions and clicks as in the grand totals aggregated **by page**. Only the sigle dimension *page* and the combination of dimensions *page* and *date* fall into this group.
+2)  The same number of impressions and clicks as in the grand totals aggregated **by property**. There are 3 dimensions here: *date*, *country* and *device*, and all their combinations.
+3)  Any combination of 2 or more dimensions that includes *page*, except the combination of *date* and *page*, has significantly lower impressions and clicks than the two groups above.
+4)  Single dimension *query* and all its combinations with other dimensions but *page* have the same number of clicks as the 3rd group and lower number of impressions than any other group.
+
+Only groups 1, 2 and 4 behaves according to the API documentation. Group 3 does not work as expected.
+
+# Poisonous *page* dimension
+
+As the test of multiple dimensions including *page* proves, the *page* dimension "poisons" combos with all other dimensions but date. Let's examine the differences between those combos on page level.
+
+First, let's aggregate a response for *device* and *page* dimensions by page:
+
+```{r get_page_totals_for_dimensions}
+# Helper function to aggregate any combination of dimensions by pages
+
+get_page_totals_for_dimensions <-
+  function(additional_dimensions, max_rows = 1000) {
+    dimensions <- c("page", additional_dimensions)
+    response <- search_analytics(
+      property,
+      startDate = date_from,
+      endDate = date_to,
+      dimensions = dimensions,
+      searchType = search_type,
+      aggregationType = "auto",
+      rowLimit = max_rows
+    )
+    rows <- nrow(response)
+    if (rows < max_rows) {
+      # return aggregated result
+      response %>%
+        group_by(page) %>%
+        summarise(
+          dimensions = toString(dimensions),
+          rows = n(),
+          clicks = sum(clicks),
+          new_impressions = sum(impressions),
+          ctr = weighted.mean(ctr, impressions),
+          position = weighted.mean(position, impressions)
+        ) %>% 
+        rename(impressions = new_impressions) %>% 
+        arrange(desc(clicks), desc(impressions))
+    }
+  }
+
+# Helper function to anonymize URL of a page
+# Credits: Jan Gorecki
+# https://jangorecki.github.io/blog/2014-11-07/Data-Anonymization-in-R.html
+
+anonymize <- function(x, algo = "crc32") {
+  unq_hashes <-
+    vapply(
+      unique(x), 
+      function(object) digest(object, algo = algo), 
+      FUN.VALUE = "", USE.NAMES = TRUE
+    )
+  unname(unq_hashes[x])
+}
+
+multidimensional <- get_page_totals_for_dimensions("device")
+multidimensional %>% head() %>% mutate(page = anonymize(page))
+```
+
+(URLs of pages are anonymized and only the first few rows of `r nrow(multidimensional)` are listed.)
+
+Second, let's get a response for the *page* dimension only.
+
+```{r page_only}
+singledimensional <- fetch_dimensions("page")
+singledimensional %>% head() %>% mutate(page = anonymize(page))
+```
+
+(URLs of pages are anonymized and only the first few rows of `r nrow(singledimensional)` are listed.)
+
+And finally, let's compare these two results page by page. Metrics of the single-dimensional table are marked by *x*, metrics of the mufti-dimensional table are marked by *y*.
+
+```{r page_by_page_comparison}
+single_multi_join <- full_join(singledimensional, multidimensional, by = "page") %>% 
+  select(
+    page,
+    contains(".")
+  ) %>% 
+  select(
+    page,
+    starts_with("clicks"),
+    starts_with("impressions"),
+    starts_with("ctr"),
+    starts_with("position")
+  )
+
+single_multi_join %>% head() %>% mutate(page = anonymize(page))
+```
+
+(URLs of pages are anonymized and only the first few rows out of `r nrow(single_multi_join)` are listed.)
+
+Differences in both impressions and clicks are not dependent on base values and seem to be random.
+
+```{r diff_chart_impressions, fig.height=7, fig.width=7}
+plot_sample <- function(data_set, metrics_x, metrics_y, dimension) {
+  metrics_x <- enquo(metrics_x)
+  metrics_y <- enquo(metrics_y)
+  dimension <- enquo(dimension)
+  data_set %>% 
+  sample_n(30, weight = !!metrics_x) %>% 
+  mutate(page = anonymize(page)) %>% 
+  ggplot(mapping = aes(x = !!metrics_y, y = reorder(!!dimension, !!metrics_x))) +
+  geom_col(mapping = aes(x = !!metrics_x), fill = "grey70") +
+  geom_col(width = 0.5, fill = "grey30")
+}
+
+single_multi_join %>% plot_sample(impressions.x, impressions.y, page)
+single_multi_join %>% plot_sample(clicks.x, clicks.y, page)
+single_multi_join %>% plot_sample(ctr.x, ctr.y, page)
+single_multi_join %>% plot_sample(position.x, position.y, page)
+```
+
+(Note: the charts above contain a random sample of pages weighted by impressions.x and clicks.x, respectively. URLs are anonimized.)
+
+## Conclusion to multiple dimensions with *page*
+
+The *page* dimension works fine when alone or combined with *date*. Otherwise it is poisonous and leads to a significant decrease in clicks and impressions (which can be greater then 50%). On the page level there is no straightforward correlation with base values (ie. clicks and impressions for the single *page* dimension).
+
+CTRs are lower in total, but randomly both lower and higher on the page level. Positions are higher in total and also on the page level they are more often higher, but they are also random and sometimes lower.
+
+```{r end}
+knit_exit("End of the report.")
+```

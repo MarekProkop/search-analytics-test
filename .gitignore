@@ -1,0 +1,11 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+
+# private files
+client_secret_*.json
+sc_ga.httr-oauth
+
+# cache
+search_analytics-cache/
