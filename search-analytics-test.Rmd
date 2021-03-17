@@ -57,7 +57,7 @@ gar.project <- gar_auth(token = "sc_ga.httr-oauth")
 
 ```{r params}
 property <- "http://www.cajtydne.cz/"
-date_to <- today() - 3
+date_to <- today() - 4
 date_from <- date_to - weeks(4) + 1
 search_type <- "web"
 
@@ -74,7 +74,7 @@ glue(
 
 Total metrics for the whole site and time period, i.e. without any dimensions or filters.
 
-## Aggreagated by property
+## Aggregated by property
 
 Search Analytics API is called without any dimensions or filters, and is aggregated by property. This is the base reference. All other results aggregated by property should sum up to the same numbers.
 
@@ -128,7 +128,7 @@ grand_totals_comparison
 
 ## Conclusion to aggregation types
 
-All four total metrics depends on aggregation type. Clicks and impressions are greater when aggregated by page than when they are aggregated by property, was is expected and is aligned with the API documentation. On the contrary, ctr and position seem to be greater when aggregated by property. This should be confirmed or denied with another data.
+All four total metrics depends on aggregation type. Clicks and impressions are greater when aggregated by page than when they are aggregated by property, which is expected and is aligned with the API documentation. On the contrary, ctr and position seem to be greater when aggregated by property. This should be confirmed or denied with another data.
 
 # How aggregation depends on dimensions
 
@@ -238,7 +238,7 @@ all_combos_summary %>%
 
 Aggregated results fall into 4 groups:
 
-1\) The same number of impressions and clicks as in the grand totals aggregated **by page**. Only the sigle dimension *page* and the combination of dimensions *page* and *date* fall into this group. 2) The same number of impressions and clicks as in the grand totals aggregated **by property**. There are 3 dimensions here: *date*, *country* and *device*, and all their combinations. 3) Any combination of 2 or more dimensions that includes *page*, except the combination of *date* and *page*, has significantly lower impressions and clicks than the two groups above. 4) Single dimension *query* and all its combinations with other dimensions but *page* have the same number of clicks as the 3rd group and lower number of impressions than any other group.
+1\) The same number of impressions and clicks as in the grand totals aggregated **by page**. Only the single dimension *page* and the combination of dimensions *page* and *date* fall into this group. 2) The same number of impressions and clicks as in the grand totals aggregated **by property**. There are 3 dimensions here: *date*, *country* and *device*, and all their combinations. 3) Any combination of 2 or more dimensions that includes *page*, except the combination of *date* and *page*, has significantly lower impressions and clicks than the two groups above. 4) Single dimension *query* and all its combinations with other dimensions but *page* have the same number of clicks as the 3rd group and lower number of impressions than any other group.
 
 Only groups 1, 2 and 4 behaves according to the API documentation. Group 3 does not work as expected.
 

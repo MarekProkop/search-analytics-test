@@ -5,7 +5,7 @@ Search Console API - Search Analytics Data Consistency Test
   - [Summary](#summary)
   - [API call parameters](#api-call-parameters)
   - [Grand totals](#grand-totals)
-      - [Aggreagated by property](#aggreagated-by-property)
+      - [Aggregated by property](#aggregated-by-property)
       - [Aggregated by page](#aggregated-by-page)
       - [Difference due to the aggregation
         type](#difference-due-to-the-aggregation-type)
@@ -81,7 +81,7 @@ documented in the API.
 Total metrics for the whole site and time period, i.e. without any
 dimensions or filters.
 
-## Aggreagated by property
+## Aggregated by property
 
 Search Analytics API is called without any dimensions or filters, and is
 aggregated by property. This is the base reference. All other results
@@ -123,7 +123,7 @@ This is for comparison with the totals aggregated by property
 
 All four total metrics depends on aggregation type. Clicks and
 impressions are greater when aggregated by page than when they are
-aggregated by property, was is expected and is aligned with the API
+aggregated by property, which is expected and is aligned with the API
 documentation. On the contrary, ctr and position seem to be greater when
 aggregated by property. This should be confirmed or denied with another
 data.
@@ -241,7 +241,7 @@ impressions and clicks:
 Aggregated results fall into 4 groups:
 
 1\) The same number of impressions and clicks as in the grand totals
-aggregated **by page**. Only the sigle dimension *page* and the
+aggregated **by page**. Only the single dimension *page* and the
 combination of dimensions *page* and *date* fall into this group. 2) The
 same number of impressions and clicks as in the grand totals aggregated
 **by property**. There are 3 dimensions here: *date*, *country* and
